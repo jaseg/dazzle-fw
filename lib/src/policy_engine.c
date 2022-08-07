@@ -26,8 +26,9 @@
 #include "fusb302b.h"
 
 
-static void pe_sink_pps_periodic_timer_cb(void *cfg)
+static void pe_sink_pps_periodic_timer_cb(struct ch_virtual_timer *tim, void *cfg)
 {
+    (void) tim;
     /* Signal the PE thread to make a new PPS request */
     chSysLockFromISR();
     chEvtSignalI(((struct pdb_config *) cfg)->pe.thread, PDB_EVT_PE_PPS_REQUEST);

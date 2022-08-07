@@ -22,8 +22,4 @@
 
 #include <ch.h>
 
-/* PD Buddy Sink thread priorities */
-#define PDBS_PRIO_LED HIGHPRIO
-
-
 #endif /* PDBS_PRIORITIES_H */

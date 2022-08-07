@@ -24,7 +24,6 @@
 
 #include <pd.h>
 
-#include "led.h"
 #include "config.h"
 
 
@@ -115,11 +114,6 @@ bool pdbs_dpm_evaluate_capability(struct pdb_config *cfg,
     /* Get the number of PDOs */
     uint8_t numobj = PD_NUMOBJ_GET(caps);
 
-    /* Make the LED blink to indicate ongoing power negotiations */
-    if (dpm_data->led_pd_status) {
-        chEvtSignal(pdbs_led_thread, PDBS_EVT_LED_NEGOTIATING);
-    }
-
     /* Get whether or not the power supply is constrained */
     dpm_data->_unconstrained_power = caps->obj[0] & PD_PDO_SRC_FIXED_UNCONSTRAINED;
 
@@ -127,16 +121,8 @@ bool pdbs_dpm_evaluate_capability(struct pdb_config *cfg,
     /* As we want/need current anyway, lets set it to zero for now */
     uint16_t current = 0;//dpm_get_current(scfg, scfg->v);
 
-
     /*select the voltage */
-    uint16_t voltage = 0;
-    uint16_t pd_profiles[] = {5000, 9000, 15000, 20000};
-    if (cfg->state <= 3) {
-        voltage = pd_profiles[cfg->state];
-    } else {
-        voltage = pd_profiles[0];
-        cfg->state = 0;             // does not jump back :(
-    }
+    uint16_t voltage = 15000;
 
     /* Make sure we have configuration */
     if (scfg != NULL && dpm_data->output_enabled) {
@@ -389,18 +375,13 @@ bool pdbs_dpm_evaluate_typec_current(struct pdb_config *cfg,
 
 void pdbs_dpm_pd_start(struct pdb_config *cfg)
 {
-    /* Cast the dpm_data to the right type */
-    struct pdbs_dpm_data *dpm_data = cfg->dpm_data;
-
-    if (dpm_data->led_pd_status) {
-        chEvtSignal(pdbs_led_thread, PDBS_EVT_LED_NEGOTIATING);
-    }
+    (void) cfg;
 }
 
 /*
  * Set the output state, with LED indication.
  */
-static void dpm_output_set(struct pdbs_dpm_data *dpm_data, bool state, bool led)
+static void dpm_output_set(struct pdbs_dpm_data *dpm_data, bool state)
 {
     /* Update the present voltage */
     dpm_data->_present_voltage = dpm_data->_requested_voltage;
@@ -408,16 +389,8 @@ static void dpm_output_set(struct pdbs_dpm_data *dpm_data, bool state, bool led)
     /* Set the power output */
     if (state && dpm_data->output_enabled) {
         /* Turn the output on */
-        if (dpm_data->led_pd_status && led) {
-            chEvtSignal(pdbs_led_thread, PDBS_EVT_LED_OUTPUT_ON);
-        }
-        palSetLine(LINE_OUT_CTRL);
     } else {
         /* Turn the output off */
-        if (dpm_data->led_pd_status && led) {
-            chEvtSignal(pdbs_led_thread, PDBS_EVT_LED_OUTPUT_OFF);
-        }
-        palClearLine(LINE_OUT_CTRL);
     }
 }
 
@@ -429,12 +402,12 @@ void pdbs_dpm_transition_default(struct pdb_config *cfg)
     /* Pretend we requested 5 V */
     dpm_data->_requested_voltage = 5000;
     /* Turn the output off */
-    dpm_output_set(cfg->dpm_data, false, true);
+    dpm_output_set(cfg->dpm_data, false);
 }
 
 void pdbs_dpm_transition_min(struct pdb_config *cfg)
 {
-    dpm_output_set(cfg->dpm_data, false, true);
+    dpm_output_set(cfg->dpm_data, false);
 }
 
 void pdbs_dpm_transition_standby(struct pdb_config *cfg)
@@ -447,7 +420,6 @@ void pdbs_dpm_transition_standby(struct pdb_config *cfg)
         /* For the PD Buddy Sink, entering Sink Standby is equivalent to
          * turning the output off.  However, we don't want to change the LED
          * state for standby mode. */
-        palClearLine(LINE_OUT_CTRL);
     }
 }
 
@@ -456,7 +428,7 @@ void pdbs_dpm_transition_requested(struct pdb_config *cfg)
     /* Cast the dpm_data to the right type */
     struct pdbs_dpm_data *dpm_data = cfg->dpm_data;
 
-    dpm_output_set(cfg->dpm_data, dpm_data->_capability_match, true);
+    dpm_output_set(cfg->dpm_data, dpm_data->_capability_match);
 }
 
 void pdbs_dpm_transition_typec(struct pdb_config *cfg)
@@ -464,13 +436,6 @@ void pdbs_dpm_transition_typec(struct pdb_config *cfg)
     /* Cast the dpm_data to the right type */
     struct pdbs_dpm_data *dpm_data = cfg->dpm_data;
 
-    /* If we only have default Type-C Current, set a special LED status */
-    if (dpm_data->led_pd_status
-            && dpm_data->typec_current == fusb_tcc_default) {
-        chEvtSignal(pdbs_led_thread, PDBS_EVT_LED_OUTPUT_OFF_NO_TYPEC);
-    }
-
     /* Set the output, only setting the LED status if it wasn't set above */
-    dpm_output_set(cfg->dpm_data, dpm_data->_capability_match,
-                   dpm_data->typec_current != fusb_tcc_default);
+    dpm_output_set(cfg->dpm_data, dpm_data->_capability_match);
 }

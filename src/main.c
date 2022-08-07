@@ -34,33 +34,15 @@
 
 #include <ch.h>
 #include <hal.h>
-
-#include "shell.h"
-#include "usbcfg.h"
+#include <chcore.h>
 
 #include <pdb.h>
 #include <pd.h>
-#include "led.h"
 #include "device_policy_manager.h"
 #include "stm32f072_bootloader.h"
-#include "ssd1306.h"
 #include "chprintf.h"
 #include <string.h>
 #include <stdio.h>
-
-// ADCConfig structure for stm32 MCUs is empty
-/*
-static const ADCConversionGroup adcgrpcfg2 = {
-  TRUE,
-  ADC_GRP2_NUM_CHANNELS,
-  adccallback,
-  adcerrorcallback,
-  ADC_CFGR1_CONT | ADC_CFGR1_RES_12BIT,             /* CFGR1 */
-//  ADC_TR(0, 0),                                     /* TR */
-//  ADC_SMPR_SMP_28P5,                                /* SMPR */
-//  ADC_CHSELR_CHSEL10 | ADC_CHSELR_CHSEL11 |
-//  ADC_CHSELR_CHSEL16 | ADC_CHSELR_CHSEL17           /* CHSELR */
-//};
 
 /*
  * I2C configuration object.
@@ -108,38 +90,44 @@ static struct pdb_config pdb_config = {
         NULL /* not_supported_received */
     },
     .dpm_data = &dpm_data,
-    .state = 0
 };
-/*
- * Enter setup mode
- */
-static void setup(void)
-{
-    /* Configure the DPM to play nice with the shell */
-    dpm_data.output_enabled = false;
-    dpm_data.led_pd_status = false;
-    dpm_data.usb_comms = true;
 
-    /* Start the USB Power Delivery threads */
-    pdb_init(&pdb_config);
+struct __attribute__((packed)) ContextStateFrame {
+  uint32_t r0;
+  uint32_t r1;
+  uint32_t r2;
+  uint32_t r3;
+  uint32_t r12;
+  uint32_t lr;
+  uint32_t return_address;
+  uint32_t xpsr;
+};
 
-    /* Indicate that we're in setup mode */
-    chEvtSignal(pdbs_led_thread, PDBS_EVT_LED_CONFIG);
-
-    /* Disconnect from USB */
-    usbDisconnectBus(serusbcfg.usbp);
-
-    /* Start the USB serial interface */
-    sduObjectInit(&SDU1);
-    sduStart(&SDU1, &serusbcfg);
-
-    /* Start USB */
-    chThdSleepMilliseconds(100);
-    usbStart(serusbcfg.usbp, &usbcfg);
-    usbConnectBus(serusbcfg.usbp);
-
-    /* Start the shell */
-    pdbs_shell(&pdb_config);
+__attribute__((__naked__))
+void HardFault_Handler(void) {
+    PORT_IRQ_PROLOGUE();
+    struct ContextStackFrame *frame;
+    if (_saved_lr & 4) {
+        frame = (struct ContextStackFrame *)__get_PSP();
+    } else {
+        frame = (struct ContextStackFrame *)__get_MSP();
+    }
+    (void) frame;
+    __BKPT(42);
+    /*
+    asm volatile (
+      "ldr %[frame], #4\n"
+      "tst lr, %[frame] \n"
+      "beq msp%= \n"
+      "psp%=: mrs %[frame], psp \n"
+      "b out%=\n"
+      "msp%=: mrs %[frame], msp \n"
+      "out%=:\n"
+      : [frame] "=r" (frame)
+      :
+      : "r0");
+    asm volatile ("bkpt");
+    */
 }
 
 /*
@@ -150,113 +138,21 @@ static void sink(void)
     /* Start the USB Power Delivery threads */
     pdb_init(&pdb_config);
     chThdSleepMilliseconds(100);
-    //palSetLine(LINE_FET);
-    pdb_config.state = 0;
     chThdSleepMilliseconds(10);
     chEvtSignal(pdb_config.pe.thread, PDB_EVT_PE_NEW_POWER);
-    uint8_t _cnt = 1;
     /* Wait, letting all the other threads do their work. */
     while (true) {
-        //palSetLine(LINE_LED);
-        chThdSleepMilliseconds(10);
-
-        if (palReadLine(LINE_BUTTON) == PAL_HIGH) {
-            palClearLine(LINE_LED);
-            pdb_config.state = ++_cnt;
-            if (_cnt > 3) _cnt = 0;
-            while (palReadLine(LINE_BUTTON) == PAL_HIGH) chThdSleepMilliseconds(10);
-            chEvtSignal(pdb_config.pe.thread, PDB_EVT_PE_NEW_POWER);
-        }
-
+        chThdSleepMilliseconds(1000);
+        chEvtSignal(pdb_config.pe.thread, PDB_EVT_PE_NEW_POWER);
     }
 }
 
-/*
-static SSD1306Driver SSD1306D1;
-
-static THD_WORKING_AREA(waOledDisplay, 512);
-
-static __attribute__((noreturn)) THD_FUNCTION(OledDisplay, arg) {
-    (void)arg;
-
-    chRegSetThreadName("OledDisplay");
-
-    ssd1306ObjectInit(&SSD1306D1);
-
-    ssd1306Start(&SSD1306D1, &ssd1306cfg);
-
-    ssd1306FillScreen(&SSD1306D1, 0x00);
-
-    char otter[10];
-    uint16_t pd_profiles[] = {5, 9, 15, 20};
-    uint16_t i = 0;
-
-    while (TRUE) {
-        adcStartConversion(&ADCD1, &adccg, &samples_buf[0], ADC_BUF_DEPTH);
-
-        i = samples_buf[0];
-        chsnprintf(otter, sizeof(otter), "%d", i);
-        ssd1306GotoXy(&SSD1306D1, 5, 0);
-        ssd1306Puts(&SSD1306D1, otter, &ssd1306_font_7x10, SSD1306_COLOR_WHITE);
-
-        //i = samples_buf[1];
-        //chsnprintf(otter, sizeof(otter), "%d", i);
-        //ssd1306GotoXy(&SSD1306D1, 5, 15);
-        //ssd1306Puts(&SSD1306D1, otter, &ssd1306_font_7x10, SSD1306_COLOR_WHITE);
-
-        ssd1306UpdateScreen(&SSD1306D1);
-        chThdSleepMilliseconds(300);
-    }
-}
-*/
 /*
  * Application entry point.
  */
 int main(void) {
-
-    /*
-     * System initializations.
-     * - HAL initialization, this also initializes the configured device drivers
-     *   and performs the board-specific initializations.
-     * - Kernel initialization, the main() function becomes a thread and the
-     *   RTOS is active.
-     */
     halInit();
     chSysInit();
-    //i2cInit();
-
-    /* Create the LED thread. */
-    pdbs_led_run();
-
-    /* Start I2C2 to make communication with the PHY possible */
-
     i2cStart(pdb_config.fusb.i2cp, &i2c2config);
-    //i2cStart(&I2CD1, &i2c1config);
-
-    //palSetPadMode(IOPORT2, 6, PAL_STM32_OTYPE_OPENDRAIN | PAL_MODE_ALTERNATE(1));
-    //palSetPadMode(IOPORT2, 7, PAL_STM32_OTYPE_OPENDRAIN | PAL_MODE_ALTERNATE(1));
-
-    //palSetPadMode(IOPORT1, 1, PAL_MODE_INPUT_ANALOG);
-    //palSetPadMode(IOPORT1, 2, PAL_MODE_INPUT_ANALOG);
-    //adcSTM32SetCCR(ADC_CCR_VBATEN | ADC_CCR_TSEN | ADC_CCR_VREFEN);
-    //adcSTM32SetCCR(ADC_CCR_VREFEN);
-
-
-    //adcInit();
-    //adcStart(&ADCD1, &adccfg);
-    //adcSTM32EnableVREF();
-    //setup();
     sink();
-    /*
-    if (palReadLine(LINE_BUTTON) == PAL_HIGH) {
-        systime_t now = chVTGetSystemTime();
-        while (palReadLine(LINE_BUTTON) == PAL_HIGH) {
-            if (chVTGetSystemTime() - now >= 3000) dfu_run_bootloader();
-        }
-        setup();
-    } else {
-        //chThdCreateStatic(waOledDisplay, sizeof(waOledDisplay), NORMALPRIO, OledDisplay, NULL);
-        sink();
-    }
-    */
 }

@@ -214,7 +214,7 @@ void __early_init(void) {
   stm32_clock_init();
   /* Jump to the bootloader if the magic value is set in
    * dfu_reset_to_bootloader_magic. */
-  if (dfu_reset_to_bootloader_magic == RESET_TO_BOOTLOADER_MAGIC_CODE) {
+  /*if (dfu_reset_to_bootloader_magic == RESET_TO_BOOTLOADER_MAGIC_CODE) {
     asm("cpsie i");
     void (*bootloader)(void) = (void (*)(void)) (*((uint32_t *) SYSMEM_RESET_VECTOR));
     dfu_reset_to_bootloader_magic = 0;
@@ -222,6 +222,7 @@ void __early_init(void) {
     bootloader();
     while (42);
   }
+  */
 }
 
 #if HAL_USE_SDC || defined(__DOXYGEN__)
