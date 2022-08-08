@@ -56,18 +56,6 @@ static const I2CConfig i2c2config = {
 };
 
 /*
- * PD Buddy Sink DPM data
- */
-static struct pdbs_dpm_data dpm_data = {
-    NULL,
-    fusb_tcc_none,
-    true,
-    true,
-    false,
-    ._present_voltage = 5000
-};
-
-/*
  * PD Buddy firmware library configuration object
  */
 static struct pdb_config pdb_config = {
@@ -89,7 +77,7 @@ static struct pdb_config pdb_config = {
         pdbs_dpm_transition_typec,
         NULL /* not_supported_received */
     },
-    .dpm_data = &dpm_data,
+    .dpm_data = NULL,
 };
 
 struct __attribute__((packed)) ContextStateFrame {
@@ -103,56 +91,32 @@ struct __attribute__((packed)) ContextStateFrame {
   uint32_t xpsr;
 };
 
-__attribute__((__naked__))
-void HardFault_Handler(void) {
+__attribute__((__naked__)) void HardFault_Handler(void) {
     PORT_IRQ_PROLOGUE();
     struct ContextStackFrame *frame;
-    if (_saved_lr & 4) {
+    if (_saved_lr & 4) { /* _saved_lr from PORT_IRQ_PROLOGUE */
         frame = (struct ContextStackFrame *)__get_PSP();
     } else {
         frame = (struct ContextStackFrame *)__get_MSP();
     }
     (void) frame;
     __BKPT(42);
-    /*
-    asm volatile (
-      "ldr %[frame], #4\n"
-      "tst lr, %[frame] \n"
-      "beq msp%= \n"
-      "psp%=: mrs %[frame], psp \n"
-      "b out%=\n"
-      "msp%=: mrs %[frame], msp \n"
-      "out%=:\n"
-      : [frame] "=r" (frame)
-      :
-      : "r0");
-    asm volatile ("bkpt");
-    */
+    PORT_IRQ_EPILOGUE();
 }
 
-/*
- * Negotiate with the power supply for the configured power
- */
-static void sink(void)
-{
+int main(void) {
+    halInit();
+    chSysInit();
+    i2cStart(pdb_config.fusb.i2cp, &i2c2config);
+    chThdSleepMilliseconds(100);
+
     /* Start the USB Power Delivery threads */
     pdb_init(&pdb_config);
     chThdSleepMilliseconds(100);
-    chThdSleepMilliseconds(10);
     chEvtSignal(pdb_config.pe.thread, PDB_EVT_PE_NEW_POWER);
     /* Wait, letting all the other threads do their work. */
     while (true) {
         chThdSleepMilliseconds(1000);
         chEvtSignal(pdb_config.pe.thread, PDB_EVT_PE_NEW_POWER);
     }
-}
-
-/*
- * Application entry point.
- */
-int main(void) {
-    halInit();
-    chSysInit();
-    i2cStart(pdb_config.fusb.i2cp, &i2c2config);
-    sink();
 }

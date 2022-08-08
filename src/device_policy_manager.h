@@ -24,28 +24,6 @@
 #include <pdb.h>
 
 
-struct pdbs_dpm_data {
-    /* The most recently received Source_Capabilities message */
-    const union pd_msg *capabilities;
-    /* The most recently received Type-C Current advertisement */
-    enum fusb_typec_current typec_current;
-    /* Whether the DPM is able to turn on the output */
-    bool output_enabled;
-    /* Whether the DPM sets the LED to indicate the PD status */
-    bool led_pd_status;
-    /* Whether the device is capable of USB communications */
-    bool usb_comms;
-
-    /* Whether or not the power supply is unconstrained */
-    bool _unconstrained_power;
-    /* Whether our capabilities matched or not */
-    bool _capability_match;
-    /* The last explicitly or implicitly negotiated voltage, in millivolts */
-    int _present_voltage;
-    /* The requested voltage, in millivolts */
-    int _requested_voltage;
-};
-
 /*
  * Create a Request message based on the given Source_Capabilities message.  If
  * capabilities is NULL, the last non-null Source_Capabilities message passes
