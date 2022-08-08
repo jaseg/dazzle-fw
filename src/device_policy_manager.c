@@ -28,53 +28,54 @@
 
 bool pdbs_dpm_evaluate_capability(struct pdb_config *cfg, const union pd_msg *caps, union pd_msg *request)
 {
-    /* Look at the PDOs to see if one matches our desires */
-    size_t numobj = PD_NUMOBJ_GET(caps);
-    ssize_t max_index = -1;
-    int min_voltage = 20000;
-    int max_current = 0;
-    int max_power = 0;
-    
-    for (size_t i=0; i<numobj; i++) {
-        /* If we have a fixed PDO, its V equals our desired V, and its I is
-         * at least our desired I */
-        if ((caps->obj[i] & PD_PDO_TYPE) == PD_PDO_TYPE_FIXED) {
-            int this_voltage = PD_PDV2MV(PD_PDO_SRC_FIXED_VOLTAGE_GET(caps->obj[i]));
-            int this_current = PD_PDI2MA(PD_PDO_SRC_FIXED_CURRENT_GET(caps->obj[i]));
-            int this_power = (this_voltage * this_current + 500) / 1000; /* mW */
+    if (caps != NULL) {
+        /* Look at the PDOs to see if one matches our desires */
+        size_t numobj = PD_NUMOBJ_GET(caps);
+        ssize_t max_index = -1;
+        int min_voltage = 20000;
+        int max_current = 0;
+        int max_power = 0;
+        
+        for (size_t i=0; i<numobj; i++) {
+            /* If we have a fixed PDO, its V equals our desired V, and its I is
+             * at least our desired I */
+            if ((caps->obj[i] & PD_PDO_TYPE) == PD_PDO_TYPE_FIXED) {
+                int this_voltage = PD_PDV2MV(PD_PDO_SRC_FIXED_VOLTAGE_GET(caps->obj[i]));
+                int this_current = PD_PDI2MA(PD_PDO_SRC_FIXED_CURRENT_GET(caps->obj[i]));
+                int this_power = (this_voltage * this_current + 500) / 1000; /* mW */
 
-            /* Choose the entry providing the most power. When we find multiple entries providing the same power, choose
-             * the one with the lowest voltage to reduce buck converter losses. */
-            if (this_power < max_power || this_power == max_power && this_voltage > min_voltage) {
-                continue;
+                /* Choose the entry providing the most power. When we find multiple entries providing the same power, choose
+                 * the one with the lowest voltage to reduce buck converter losses. */
+                if (this_power < max_power || this_power == max_power && this_voltage > min_voltage) {
+                    continue;
+                }
+
+                max_power = this_power;
+                min_voltage = this_voltage;
+                max_current = this_current;
+                max_index = i;
             }
-
-            max_power = this_power;
-            min_voltage = this_voltage;
-            max_current = this_current;
-            max_index = i;
         }
-    }
 
-    if (max_index >= 0) {
-        /* We got what we wanted, so build a request for that */
+        if (max_index >= 0) {
+            /* We got what we wanted, so build a request for that */
+            request->hdr = cfg->pe.hdr_template | PD_MSGTYPE_REQUEST | PD_NUMOBJ(1);
+            /* GiveBack disabled */
+            request->obj[0] = PD_RDO_FV_MAX_CURRENT_SET(PD_MA2PDI(max_current))
+                              | PD_RDO_FV_CURRENT_SET(PD_MA2PDI(max_current))
+                              | PD_RDO_NO_USB_SUSPEND | PD_RDO_OBJPOS_SET(max_index + 1);
+            return true;
+        }
+
+        request->obj[0] |= PD_RDO_CAP_MISMATCH;
+        /* Nothing matched (or no configuration), so get 5 V at low current */
         request->hdr = cfg->pe.hdr_template | PD_MSGTYPE_REQUEST | PD_NUMOBJ(1);
-        /* GiveBack disabled */
-        request->obj[0] = PD_RDO_FV_MAX_CURRENT_SET(PD_MA2PDI(max_current))
-                          | PD_RDO_FV_CURRENT_SET(PD_MA2PDI(max_current))
-                          | PD_RDO_NO_USB_SUSPEND | PD_RDO_OBJPOS_SET(max_index + 1);
-        return true;
+        request->obj[0] = PD_RDO_FV_MAX_CURRENT_SET(PD_MA2PDI(DPM_MIN_CURRENT))
+                          | PD_RDO_FV_CURRENT_SET(PD_MA2PDI(DPM_MIN_CURRENT))
+                          | PD_RDO_NO_USB_SUSPEND
+                          | PD_RDO_OBJPOS_SET(1);
+        return false;
     }
-
-    request->obj[0] |= PD_RDO_CAP_MISMATCH;
-
-    /* Nothing matched (or no configuration), so get 5 V at low current */
-    request->hdr = cfg->pe.hdr_template | PD_MSGTYPE_REQUEST | PD_NUMOBJ(1);
-    request->obj[0] = PD_RDO_FV_MAX_CURRENT_SET(PD_MA2PDI(DPM_MIN_CURRENT))
-                      | PD_RDO_FV_CURRENT_SET(PD_MA2PDI(DPM_MIN_CURRENT))
-                      | PD_RDO_NO_USB_SUSPEND
-                      | PD_RDO_OBJPOS_SET(1);
-    return false;
 }
 
 void pdbs_dpm_get_sink_capability(struct pdb_config *cfg, union pd_msg *cap)

@@ -43,6 +43,7 @@
 #include "chprintf.h"
 #include <string.h>
 #include <stdio.h>
+#include <dazzle.h>
 
 /*
  * I2C configuration object.
@@ -53,6 +54,9 @@ static const I2CConfig i2c2config = {
     0x00700818,
     0,
     0
+};
+
+static struct dazzle_cfg dazzle_cfg = {
 };
 
 /*
@@ -114,9 +118,9 @@ int main(void) {
     pdb_init(&pdb_config);
     chThdSleepMilliseconds(100);
     chEvtSignal(pdb_config.pe.thread, PDB_EVT_PE_NEW_POWER);
+    dazzle_power_governor_run(&dazzle_cfg);
     /* Wait, letting all the other threads do their work. */
     while (true) {
         chThdSleepMilliseconds(1000);
-        chEvtSignal(pdb_config.pe.thread, PDB_EVT_PE_NEW_POWER);
     }
 }
