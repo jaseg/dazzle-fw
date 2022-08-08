@@ -23,8 +23,8 @@
 #include <unistd.h>
 #include "config.h"
 
-/* The current draw when the output is disabled */
-#define DPM_MIN_CURRENT PD_MA2PDI(100)
+/* The current draw when the output is disabled [mA] */
+#define DPM_MIN_CURRENT 100
 
 bool pdbs_dpm_evaluate_capability(struct pdb_config *cfg, const union pd_msg *caps, union pd_msg *request)
 {
@@ -60,8 +60,8 @@ bool pdbs_dpm_evaluate_capability(struct pdb_config *cfg, const union pd_msg *ca
         /* We got what we wanted, so build a request for that */
         request->hdr = cfg->pe.hdr_template | PD_MSGTYPE_REQUEST | PD_NUMOBJ(1);
         /* GiveBack disabled */
-        request->obj[0] = PD_RDO_FV_MAX_CURRENT_SET(max_current)
-                          | PD_RDO_FV_CURRENT_SET(max_current)
+        request->obj[0] = PD_RDO_FV_MAX_CURRENT_SET(PD_MA2PDI(max_current))
+                          | PD_RDO_FV_CURRENT_SET(PD_MA2PDI(max_current))
                           | PD_RDO_NO_USB_SUSPEND | PD_RDO_OBJPOS_SET(max_index + 1);
         return true;
     }
@@ -70,8 +70,8 @@ bool pdbs_dpm_evaluate_capability(struct pdb_config *cfg, const union pd_msg *ca
 
     /* Nothing matched (or no configuration), so get 5 V at low current */
     request->hdr = cfg->pe.hdr_template | PD_MSGTYPE_REQUEST | PD_NUMOBJ(1);
-    request->obj[0] = PD_RDO_FV_MAX_CURRENT_SET(DPM_MIN_CURRENT)
-                      | PD_RDO_FV_CURRENT_SET(DPM_MIN_CURRENT)
+    request->obj[0] = PD_RDO_FV_MAX_CURRENT_SET(PD_MA2PDI(DPM_MIN_CURRENT))
+                      | PD_RDO_FV_CURRENT_SET(PD_MA2PDI(DPM_MIN_CURRENT))
                       | PD_RDO_NO_USB_SUSPEND
                       | PD_RDO_OBJPOS_SET(1);
     return false;
