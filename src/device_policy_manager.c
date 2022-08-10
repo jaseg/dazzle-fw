@@ -46,7 +46,7 @@ bool pdbs_dpm_evaluate_capability(struct pdb_config *cfg, const union pd_msg *ca
 
                 /* Choose the entry providing the most power. When we find multiple entries providing the same power, choose
                  * the one with the lowest voltage to reduce buck converter losses. */
-                if (this_power < max_power || this_power == max_power && this_voltage > min_voltage) {
+                if ((this_power < max_power) || ((this_power == max_power) && (this_voltage > min_voltage))) {
                     continue;
                 }
 
@@ -76,6 +76,7 @@ bool pdbs_dpm_evaluate_capability(struct pdb_config *cfg, const union pd_msg *ca
                           | PD_RDO_OBJPOS_SET(1);
         return false;
     }
+    return true;
 }
 
 void pdbs_dpm_get_sink_capability(struct pdb_config *cfg, union pd_msg *cap)

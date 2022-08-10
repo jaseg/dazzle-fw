@@ -44,6 +44,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <dazzle.h>
+#include <power_governor.h>
+#include <high_current_modulation.h>
 
 /*
  * I2C configuration object.
@@ -57,6 +59,9 @@ static const I2CConfig i2c2config = {
 };
 
 static struct dazzle_cfg dazzle_cfg = {
+    .hcm = {
+        .spid = &SPID2,
+    },
 };
 
 /*
@@ -111,14 +116,15 @@ __attribute__((__naked__)) void HardFault_Handler(void) {
 int main(void) {
     halInit();
     chSysInit();
-    i2cStart(pdb_config.fusb.i2cp, &i2c2config);
+    // FIXME DEBUG i2cStart(pdb_config.fusb.i2cp, &i2c2config);
     chThdSleepMilliseconds(100);
 
     /* Start the USB Power Delivery threads */
-    pdb_init(&pdb_config);
+    // FIXME DEBUG pdb_init(&pdb_config);
     chThdSleepMilliseconds(100);
-    chEvtSignal(pdb_config.pe.thread, PDB_EVT_PE_NEW_POWER);
+    // FIXME DEBUG chEvtSignal(pdb_config.pe.thread, PDB_EVT_PE_NEW_POWER);
     dazzle_power_governor_run(&dazzle_cfg);
+    dazzle_high_current_modulation_run(&dazzle_cfg);
     /* Wait, letting all the other threads do their work. */
     while (true) {
         chThdSleepMilliseconds(1000);
