@@ -61,6 +61,16 @@ static const I2CConfig i2c2config = {
 static struct dazzle_cfg dazzle_cfg = {
     .hcm = {
         .spid = &SPID2,
+        .spic = { .cr1 = SPI_CR1_BR_1 | SPI_CR1_BR_0 },
+        .pwmd = &PWMD15,
+        .pwmc = {
+            .frequency = 8000000,
+            .channels = { {.mode = PWM_COMPLEMENTARY_OUTPUT_ACTIVE_HIGH }}
+        },
+        .clear_line = LINE_SR_CLR,
+        .channel_count = 32,
+        .bit_depth = 10,
+        .offset_correction = 0,
     },
 };
 
@@ -124,7 +134,7 @@ int main(void) {
     chThdSleepMilliseconds(100);
     // FIXME DEBUG chEvtSignal(pdb_config.pe.thread, PDB_EVT_PE_NEW_POWER);
     dazzle_power_governor_run(&dazzle_cfg);
-    dazzle_high_current_modulation_run(&dazzle_cfg);
+    dazzle_high_current_modulation_run(&dazzle_cfg.hcm);
     /* Wait, letting all the other threads do their work. */
     while (true) {
         chThdSleepMilliseconds(1000);

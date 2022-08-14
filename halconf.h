@@ -121,7 +121,7 @@
  * @brief   Enables the PWM subsystem.
  */
 #if !defined(HAL_USE_PWM) || defined(__DOXYGEN__)
-#define HAL_USE_PWM                         FALSE
+#define HAL_USE_PWM                         TRUE
 #endif
 
 /**
@@ -544,6 +544,9 @@
 #if !defined(WSPI_USE_MUTUAL_EXCLUSION) || defined(__DOXYGEN__)
 #define WSPI_USE_MUTUAL_EXCLUSION           TRUE
 #endif
+
+#define PWM_DRIVER_EXT_FIELDS void *userdata;
+#define STM32_TIM15_SUPPRESS_ISR
 
 #endif /* HALCONF_H */
 
