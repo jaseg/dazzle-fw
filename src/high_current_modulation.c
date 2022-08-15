@@ -96,10 +96,12 @@ OSAL_IRQ_HANDLER(STM32_TIM15_HANDLER) {
 
         spiStartSendI(cfg->spid, cfg->channel_count/8, cfg->p.sr_data[bit_pos]);
         TIM15->ARR = cfg->unblank_period[bit_pos];
+        TIM1->CCR3 = cfg->unblank_period[bit_pos] - 24; /* FIXME debug code */
 
     } else {
         palClearLine(cfg->clear_line);
         TIM15->ARR = cfg->blank_period;
+        TIM1->CCR3 = 0; /* FIXME debug code */
     }
 
     OSAL_IRQ_EPILOGUE();
@@ -138,11 +140,23 @@ void dazzle_high_current_modulation_run(struct high_current_modulation_cfg *cfg)
     TIM15->ARR = 24;
     TIM15->CCMR1 = STM32_TIM_CCMR1_OC1PE | STM32_TIM_CCMR1_OC1M(6);
     TIM15->CCER = STM32_TIM_CCER_CC1NE;
-    TIM15->CCR1 = 24;
+    TIM15->CCR1 = 12;
     TIM15->DIER = STM32_TIM_DIER_UIE;
     TIM15->CR1 |= STM32_TIM_CR1_CEN;
     TIM15->BDTR = STM32_TIM_BDTR_MOE;
     TIM15->EGR = STM32_TIM_EGR_UG;
+
+    rccEnableTIM1(true);
+    rccResetTIM1();
+    TIM1->CR1 = STM32_TIM_CR1_ARPE;
+    TIM1->CR2 = 0;
+    TIM1->PSC = TIM15->PSC;
+    TIM1->SMCR = STM32_TIM_SMCR_SMS(4);
+    TIM1->CCMR1 = 0;
+    TIM1->CCMR2 = STM32_TIM_CCMR2_OC3PE | STM32_TIM_CCMR2_OC3M(6);
+    TIM1->CCER = STM32_TIM_CCER_CC3E;
+    TIM1->BDTR = STM32_TIM_BDTR_MOE;
+    TIM1->CR1 |= STM32_TIM_CR1_CEN;
 
     cfg->p.thread = chThdCreateStatic(cfg->p._wa,
             sizeof(cfg->p._wa), DAZZLE_PRIO_PRL_HCM, HighCurrentModulation, cfg);
