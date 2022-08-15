@@ -28,8 +28,6 @@ struct high_current_modulation_cfg {
     } p;
     SPIDriver *spid;
     SPIConfig spic; /* Set only CR1 here (to set baudrate) */
-    PWMDriver *pwmd;
-    PWMConfig pwmc; /* Set only channel config for strobe channel here */
     ioline_t clear_line;
     size_t channel_count;
     size_t bit_depth;

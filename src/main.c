@@ -62,11 +62,6 @@ static struct dazzle_cfg dazzle_cfg = {
     .hcm = {
         .spid = &SPID2,
         .spic = { .cr1 = SPI_CR1_BR_1 | SPI_CR1_BR_0 },
-        .pwmd = &PWMD15,
-        .pwmc = {
-            .frequency = 8000000,
-            .channels = { {.mode = PWM_COMPLEMENTARY_OUTPUT_ACTIVE_HIGH }}
-        },
         .clear_line = LINE_SR_CLR,
         .channel_count = 32,
         .bit_depth = 10,

@@ -15,6 +15,6 @@ paths = subprocess.check_output('python -c "import os,sys;print(os.linesep.join(
 sys.path.extend(paths)
 end
 
-source ../../upstream/PyCortexMDebug/cmdebug/svd_gdb.py
-svd_load ../../upstream/stm32square/svd/STM32F302.svd
+source ~/ref/PyCortexMDebug/cmdebug/svd_gdb.py
+svd_load ~/ref/stm32square/svd/STM32F302.svd
 

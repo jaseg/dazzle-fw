@@ -62,9 +62,13 @@ static THD_FUNCTION(HighCurrentModulation, vcfg) {
     }
 }
 
-static void timer_update_callback(PWMDriver *pwmp) {
+static struct high_current_modulation_cfg *tim15_cfg;
+OSAL_IRQ_HANDLER(STM32_TIM15_HANDLER) {
+    OSAL_IRQ_PROLOGUE();
+    TIM15->SR = 0;
+
     static size_t bit_pos_lookup[10] = {0,1,2,3,4,5,6,7,8,9};
-    struct high_current_modulation_cfg *cfg = pwmp->userdata;
+    struct high_current_modulation_cfg *cfg = tim15_cfg;
     bool is_blank = cfg->p.is_blank;
     cfg->p.is_blank = !is_blank;
     if (is_blank) {
@@ -85,18 +89,20 @@ static void timer_update_callback(PWMDriver *pwmp) {
         if (bit_pos == cfg->bit_depth) {
             bit_pos = 0;
             /* dither timer frequency to spread out coil whine */
-            cfg->pwmd->tim->PSC = 47 - 10 + xorshift32()%21;
+            //TIM15->PSC = 47 - 10 + xorshift32()%21; FIXME
         }
         cfg->p.bit_pos = bit_pos;
         bit_pos = bit_pos_lookup[bit_pos];
 
         spiStartSendI(cfg->spid, cfg->channel_count/8, cfg->p.sr_data[bit_pos]);
-        pwmChangePeriod(cfg->pwmd, cfg->unblank_period[bit_pos]*4);
+        TIM15->ARR = cfg->unblank_period[bit_pos];
 
     } else {
         palClearLine(cfg->clear_line);
-        pwmChangePeriod(cfg->pwmd, cfg->blank_period*4);
+        TIM15->ARR = cfg->blank_period;
     }
+
+    OSAL_IRQ_EPILOGUE();
 }
 
 void dazzle_high_current_modulation_run(struct high_current_modulation_cfg *cfg) {
@@ -108,29 +114,36 @@ void dazzle_high_current_modulation_run(struct high_current_modulation_cfg *cfg)
     cfg->spic.data_cb = NULL;
     cfg->spic.error_cb = NULL;
     cfg->spic.cr2 = 0;
+    spiStart(cfg->spid, &cfg->spic);
 
-    cfg->pwmc.period = 0x10000;
-    cfg->pwmc.callback = timer_update_callback;
-    cfg->pwmd->userdata = cfg;
+    tim15_cfg = cfg;
+    rccEnableTIM15(true);
+    rccResetTIM15();
+    nvicEnableVector(STM32_TIM15_NUMBER, STM32_IRQ_TIM15_PRIORITY);
+
+    const int F = 48;
 
     if (cfg->blank_period == 0)
-        cfg->blank_period = 100;
+        cfg->blank_period = 100 * F;
 
     if (cfg->unblank_period[0] == 0) {
         for (size_t i=0; i<cfg->bit_depth; i++) {
-            cfg->unblank_period[i] = (2<<i) + cfg->offset_correction;
+            cfg->unblank_period[i] = (2<<i)*F + cfg->offset_correction;
         }
     }
 
-    spiStart(cfg->spid, &cfg->spic);
-    pwmStart(cfg->pwmd, &cfg->pwmc);
-    pwmChangePeriod(cfg->pwmd, 4);
-    for (size_t i=0; i<STM32_TIM_MAX_CHANNELS; i++) {
-        if (cfg->pwmc.channels[i].mode) {
-            pwmEnableChannel(cfg->pwmd, i, 1);
-        }
-    }
-    pwmEnablePeriodicNotification(cfg->pwmd);
+    TIM15->CR1 = STM32_TIM_CR1_ARPE;
+    TIM15->CR2 = STM32_TIM_CR2_MMS(2);
+    TIM15->PSC = 1;
+    TIM15->ARR = 24;
+    TIM15->CCMR1 = STM32_TIM_CCMR1_OC1PE | STM32_TIM_CCMR1_OC1M(6);
+    TIM15->CCER = STM32_TIM_CCER_CC1NE;
+    TIM15->CCR1 = 24;
+    TIM15->DIER = STM32_TIM_DIER_UIE;
+    TIM15->CR1 |= STM32_TIM_CR1_CEN;
+    TIM15->BDTR = STM32_TIM_BDTR_MOE;
+    TIM15->EGR = STM32_TIM_EGR_UG;
+
     cfg->p.thread = chThdCreateStatic(cfg->p._wa,
             sizeof(cfg->p._wa), DAZZLE_PRIO_PRL_HCM, HighCurrentModulation, cfg);
 
