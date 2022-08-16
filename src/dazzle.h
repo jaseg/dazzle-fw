@@ -22,19 +22,25 @@ struct high_current_modulation_cfg {
     struct {
         THD_WORKING_AREA(_wa, DAZZLE_HCM_WA_SIZE);
         thread_t *thread;
-        uint8_t sr_data[DAZZLE_HCM_MAX_BIT_DEPTH][DAZZLE_HCM_MAX_REGISTERS];
+        uint8_t data_high[DAZZLE_HCM_MAX_BIT_DEPTH][DAZZLE_HCM_MAX_REGISTERS];
+        uint8_t data_low[DAZZLE_HCM_MAX_BIT_DEPTH][DAZZLE_HCM_MAX_REGISTERS];
         bool is_blank;
         size_t bit_pos;
     } p;
-    SPIDriver *spid;
-    SPIConfig spic; /* Set only CR1 here (to set baudrate) */
-    ioline_t clear_line;
+    SPIDriver *spid_high;
+    SPIDriver *spid_low;
+    SPIConfig spic_high; /* Set only CR1 here (to set baudrate) */
+    SPIConfig spic_low; /* Set only CR1 here (to set baudrate) */
+    ioline_t sr_clear_line;
+    int front_porch;
     size_t channel_count;
     size_t bit_depth;
     int offset_correction;
+    int base_divider;
+    int prescaler;
     uint16_t val[DAZZLE_HCM_MAX_REGISTERS*8];
     int blank_period; /* automatically calculated if zero */
-    int unblank_period[DAZZLE_HCM_MAX_BIT_DEPTH]; /* automatically calculated when offset_correction is given or when
+    int unblank_period_high[DAZZLE_HCM_MAX_BIT_DEPTH]; /* automatically calculated when offset_correction is given or when
                                                      element at index [0] is zero */
 };
 

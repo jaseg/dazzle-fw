@@ -60,12 +60,15 @@ static const I2CConfig i2c2config = {
 
 static struct dazzle_cfg dazzle_cfg = {
     .hcm = {
-        .spid = &SPID2,
-        .spic = { .cr1 = SPI_CR1_BR_1 | SPI_CR1_BR_0 },
-        .clear_line = LINE_SR_CLR,
+        .spid_high = &SPID2,
+        .spid_low = &SPID1,
+        .sr_clear_line = LINE_SR_CLR,
         .channel_count = 32,
         .bit_depth = 10,
         .offset_correction = 0,
+        .front_porch = 24,
+        .base_divider = 48,
+        .prescaler = 2,
     },
 };
 

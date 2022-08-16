@@ -27,15 +27,15 @@ static uint32_t xorshift32(void) {
 
 
 static void precalc_modulation(struct high_current_modulation_cfg *cfg) {
-    /* transpose brightness values from cfg->val to cfg->sr_data */
+    /* transpose brightness values from cfg->val to cfg->data_{high,low} */
     for (size_t j=0; j<cfg->bit_depth; j++) {
         for (size_t i=0; i<cfg->channel_count/8; i++) {
-            cfg->p.sr_data[j][i] = 0;
+            cfg->p.data_high[j][i] = 0;
         }
         for (size_t i=0; i<cfg->channel_count/8; i++) {
             for (size_t k=0; k<8; k++) {
                 if (cfg->val[i*8+k] & (1<<j))
-                    cfg->p.sr_data[j][i] |= (1<<k);
+                    cfg->p.data_high[j][i] |= (1<<k);
             }
         }
     }
@@ -51,7 +51,7 @@ static THD_FUNCTION(HighCurrentModulation, vcfg) {
         if (input > (1<<cfg->bit_depth)-1) {
             input = (1<<cfg->bit_depth)-1;
         }
-        j = (j+3) % ((1<<cfg->bit_depth) + 5000);
+        j = (j+3) % ((1<<cfg->bit_depth) + 200);
         float gamma = 2.8;
         int max = (1<<cfg->bit_depth) - 1;
         float value = powf(input / max, gamma) * max + 0.5;
@@ -72,7 +72,7 @@ OSAL_IRQ_HANDLER(STM32_TIM15_HANDLER) {
     bool is_blank = cfg->p.is_blank;
     cfg->p.is_blank = !is_blank;
     if (is_blank) {
-        palSetLine(cfg->clear_line);
+        palSetLine(cfg->sr_clear_line);
 
         /*
         size_t bit_pos = xorshift32() % cfg->bit_depth + 4;
@@ -94,12 +94,12 @@ OSAL_IRQ_HANDLER(STM32_TIM15_HANDLER) {
         cfg->p.bit_pos = bit_pos;
         bit_pos = bit_pos_lookup[bit_pos];
 
-        spiStartSendI(cfg->spid, cfg->channel_count/8, cfg->p.sr_data[bit_pos]);
-        TIM15->ARR = cfg->unblank_period[bit_pos];
-        TIM1->CCR3 = cfg->unblank_period[bit_pos] - 24; /* FIXME debug code */
+        spiStartSendI(cfg->spid_high, cfg->channel_count/8, cfg->p.data_high[bit_pos]);
+        TIM15->ARR = cfg->unblank_period_high[bit_pos];
+        TIM1->CCR3 = cfg->unblank_period_high[bit_pos] - 24; /* FIXME debug code */
 
     } else {
-        palClearLine(cfg->clear_line);
+        palClearLine(cfg->sr_clear_line);
         TIM15->ARR = cfg->blank_period;
         TIM1->CCR3 = 0; /* FIXME debug code */
     }
@@ -111,36 +111,48 @@ void dazzle_high_current_modulation_run(struct high_current_modulation_cfg *cfg)
     cfg->p.is_blank = false;
     cfg->p.bit_pos = 0;
 
-    cfg->spic.circular = false;
-    cfg->spic.slave = false;
-    cfg->spic.data_cb = NULL;
-    cfg->spic.error_cb = NULL;
-    cfg->spic.cr2 = 0;
-    spiStart(cfg->spid, &cfg->spic);
+    cfg->spic_high.circular = false;
+    cfg->spic_high.slave = false;
+    cfg->spic_high.data_cb = NULL;
+    cfg->spic_high.error_cb = NULL;
+    cfg->spic_high.cr2 = 0;
+    cfg->spic_high.cr1 = SPI_CR1_BR_1 | SPI_CR1_BR_0;
+    spiStart(cfg->spid_high, &cfg->spic_high);
+
+    cfg->spic_low.circular = false;
+    cfg->spic_low.slave = false;
+    cfg->spic_low.data_cb = NULL;
+    cfg->spic_low.error_cb = NULL;
+    cfg->spic_low.cr2 = 0;
+    cfg->spic_low.cr1 = SPI_CR1_BR_1 | SPI_CR1_BR_0;
+    spiStart(cfg->spid_low, &cfg->spic_low);
 
     tim15_cfg = cfg;
     rccEnableTIM15(true);
     rccResetTIM15();
     nvicEnableVector(STM32_TIM15_NUMBER, STM32_IRQ_TIM15_PRIORITY);
 
-    const int F = 48;
+    if (cfg->blank_period == 0) {
+        cfg->blank_period = 100 * cfg->base_divider;
+    }
 
-    if (cfg->blank_period == 0)
-        cfg->blank_period = 100 * F;
-
-    if (cfg->unblank_period[0] == 0) {
+    if (cfg->unblank_period_high[0] == 0) {
         for (size_t i=0; i<cfg->bit_depth; i++) {
-            cfg->unblank_period[i] = (2<<i)*F + cfg->offset_correction;
+            cfg->unblank_period_high[i] = (2<<i)*cfg->base_divider + cfg->offset_correction;
         }
+    }
+
+    for (size_t i=0; i<cfg->bit_depth; i++) {
+        cfg->unblank_period_high[i] += cfg->front_porch;
     }
 
     TIM15->CR1 = STM32_TIM_CR1_ARPE;
     TIM15->CR2 = STM32_TIM_CR2_MMS(2);
-    TIM15->PSC = 1;
-    TIM15->ARR = 24;
+    TIM15->PSC = cfg->prescaler-1;
+    TIM15->ARR = 24; /* arbitrary init value */
     TIM15->CCMR1 = STM32_TIM_CCMR1_OC1PE | STM32_TIM_CCMR1_OC1M(6);
-    TIM15->CCER = STM32_TIM_CCER_CC1NE;
-    TIM15->CCR1 = 12;
+    TIM15->CCER = STM32_TIM_CCER_CC1NE | STM32_TIM_CCER_CC1NP;
+    TIM15->CCR1 = cfg->front_porch;
     TIM15->DIER = STM32_TIM_DIER_UIE;
     TIM15->CR1 |= STM32_TIM_CR1_CEN;
     TIM15->BDTR = STM32_TIM_BDTR_MOE;
@@ -150,11 +162,11 @@ void dazzle_high_current_modulation_run(struct high_current_modulation_cfg *cfg)
     rccResetTIM1();
     TIM1->CR1 = STM32_TIM_CR1_ARPE;
     TIM1->CR2 = 0;
-    TIM1->PSC = TIM15->PSC;
+    TIM1->PSC = cfg->prescaler-1;
     TIM1->SMCR = STM32_TIM_SMCR_SMS(4);
-    TIM1->CCMR1 = 0;
+    TIM1->CCMR1 = STM32_TIM_CCMR1_OC1PE | STM32_TIM_CCMR1_OC1M(6);
     TIM1->CCMR2 = STM32_TIM_CCMR2_OC3PE | STM32_TIM_CCMR2_OC3M(6);
-    TIM1->CCER = STM32_TIM_CCER_CC3E;
+    TIM1->CCER = STM32_TIM_CCER_CC1E | STM32_TIM_CCER_CC1P | STM32_TIM_CCER_CC3E;
     TIM1->BDTR = STM32_TIM_BDTR_MOE;
     TIM1->CR1 |= STM32_TIM_CR1_CEN;
 
