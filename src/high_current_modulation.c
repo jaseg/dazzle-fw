@@ -30,7 +30,7 @@ static uint32_t xorshift32(void) {
 static void precalc_modulation(struct high_current_modulation_cfg *cfg) {
     /* transpose brightness values from cfg->val to cfg->data_{high,low} */
     memset(cfg->p.data_high, 0, sizeof(cfg->p.data_high));
-    memset(cfg->p.data_low, 0xff, sizeof(cfg->p.data_low));
+    memset(cfg->p.data_low, 0, sizeof(cfg->p.data_low));
 
     for (size_t i=0; i<cfg->channel_count; i++) {
         /* fixme too slow
@@ -42,8 +42,8 @@ static void precalc_modulation(struct high_current_modulation_cfg *cfg) {
         /* TODO match up channels */
         int map_high = cfg->high_channel_map[i];
         int map_low = cfg->low_channel_map[i];
-        size_t bit_mask_high = 1<<(map_high%8);
-        size_t bit_mask_low = ~(1<<(map_low%8));
+        uint32_t bit_mask_high = 1<<(map_high%8);
+        uint32_t bit_mask_low = 1<<(map_low%8);
         size_t reg_index_high = map_high/8;
         size_t reg_index_low = map_low/8;
 
@@ -54,7 +54,7 @@ static void precalc_modulation(struct high_current_modulation_cfg *cfg) {
                 cfg->p.data_high[cfg->bit_depth-1-bit][reg_index_high] |= bit_mask_high;
                 value_ui -= high_bit;
             } else if (value_ui > low_bit) {
-                cfg->p.data_low[cfg->bit_depth-1-bit][4-reg_index_low] &= bit_mask_low;
+                cfg->p.data_low[cfg->bit_depth-1-bit][3-reg_index_low] |= bit_mask_low;
                 value_ui -= low_bit;
             }
             high_bit >>= 1;
@@ -69,9 +69,9 @@ static THD_FUNCTION(HighCurrentModulation, vcfg) {
     int j = 0;
     while (true) {
         chThdSleepMilliseconds(2);
-        j = (j+7)%0x10000;
+        j = (j+5)%0x10000;
         for (size_t i=0; i<sizeof(cfg->val)/sizeof(cfg->val[0]); i++) {
-            cfg->val[i] = (i == 28) ? j : 0;
+            cfg->val[i] = j;
         }
         precalc_modulation(cfg);
 
@@ -130,17 +130,17 @@ OSAL_IRQ_HANDLER(STM32_TIM15_HANDLER) {
         cfg->p.bit_pos = bit_pos;
         bit_pos = bit_pos_lookup[bit_pos];
 
-        spiStartSendI(cfg->spid_high, cfg->channel_count/8, cfg->p.data_high[bit_pos]);
-        spiStartSendI(cfg->spid_low, cfg->channel_count/8, cfg->p.data_low[bit_pos]);
+        spiStartSendI(cfg->spid_high, (cfg->channel_count+7)/8, cfg->p.data_high[bit_pos]);
+        spiStartSendI(cfg->spid_low, (cfg->channel_count+7)/8, cfg->p.data_low[bit_pos]);
         TIM15->ARR = cfg->unblank_period_high[bit_pos];
-        TIM1->CCR3 = cfg->unblank_period_low[bit_pos] - 24; /* FIXME debug code */
+        TIM1->CCR3 = cfg->unblank_period_low[bit_pos];
         TIM1->CCR1 = 0;
 
     } else {
         palClearLine(cfg->sr_clear_line);
         TIM15->ARR = cfg->blank_period;
         TIM1->CCR3 = 0;
-        TIM1->CCR1 = cfg->high_strobe_allowance;
+        TIM1->CCR1 = cfg->low_strobe_allowance;
     }
 
     OSAL_IRQ_EPILOGUE();
@@ -176,6 +176,7 @@ static void tlc5922_load_dot_correction(struct high_current_modulation_cfg *cfg)
     TIM1->CCR1 = 24; /* Generate a train of strobe pulses */
     chThdSleepMilliseconds(5);
     palClearLine(cfg->tlc_mode_line);
+    TIM1->ARR = 0xffff;
 }
 
 void dazzle_high_current_modulation_run(struct high_current_modulation_cfg *cfg) {
@@ -202,8 +203,8 @@ void dazzle_high_current_modulation_run(struct high_current_modulation_cfg *cfg)
         cfg->blank_period = 100 * cfg->base_divider;
     }
     
-    if (cfg->high_strobe_allowance == 0) {
-        cfg->high_strobe_allowance = cfg->blank_period - 20;
+    if (cfg->low_strobe_allowance == 0) {
+        cfg->low_strobe_allowance = 2000;
     }
 
     if (cfg->unblank_period_high[0] == 0) {
@@ -230,7 +231,7 @@ void dazzle_high_current_modulation_run(struct high_current_modulation_cfg *cfg)
     TIM15->CR2 = STM32_TIM_CR2_MMS(2);
     TIM15->PSC = cfg->prescaler-1;
     TIM15->ARR = 24; /* arbitrary init value */
-    TIM15->CCMR1 = STM32_TIM_CCMR1_OC1PE | STM32_TIM_CCMR1_OC1M(6);
+    TIM15->CCMR1 = STM32_TIM_CCMR1_OC1PE | STM32_TIM_CCMR1_OC1M(6); /* shift register / high strobe */
     TIM15->CCER = STM32_TIM_CCER_CC1NE | STM32_TIM_CCER_CC1NP;
     TIM15->CCR1 = cfg->front_porch;
     TIM15->DIER = STM32_TIM_DIER_UIE;
@@ -245,8 +246,9 @@ void dazzle_high_current_modulation_run(struct high_current_modulation_cfg *cfg)
     TIM1->PSC = cfg->prescaler-1;
     TIM1->SMCR = STM32_TIM_SMCR_SMS(4);
     TIM1->CCR1 = 24;
-    TIM1->CCMR1 = STM32_TIM_CCMR1_OC1PE | STM32_TIM_CCMR1_OC1M(6); /* OC1: strobe */
-    TIM1->CCMR2 = STM32_TIM_CCMR2_OC3PE | STM32_TIM_CCMR2_OC3M(6); /* OC3: blank */
+    TIM1->ARR = 0xffff;
+    TIM1->CCMR1 = STM32_TIM_CCMR1_OC1PE | STM32_TIM_CCMR1_OC1M(6); /* OC1: TLC / low strobe */
+    TIM1->CCMR2 = STM32_TIM_CCMR2_OC3PE | STM32_TIM_CCMR2_OC3M(7); /* OC3: TLC / low blank */
     TIM1->CCER = STM32_TIM_CCER_CC1E | STM32_TIM_CCER_CC1P | STM32_TIM_CCER_CC3E;
     TIM1->BDTR = STM32_TIM_BDTR_MOE;
     TIM1->CR1 |= STM32_TIM_CR1_CEN;

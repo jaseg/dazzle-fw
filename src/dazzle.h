@@ -36,7 +36,7 @@ struct high_current_modulation_cfg {
     int range_scale;
     float gamma;
     int front_porch;
-    int high_strobe_allowance;
+    int low_strobe_allowance;
     size_t channel_count;
     size_t bit_depth;
     int high_offset_correction;
