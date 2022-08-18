@@ -28,6 +28,66 @@ static uint32_t xorshift32(void) {
 }
 
 
+#define BITSPERLONG 32
+#define TOP2BITS(x) ((x & (3L << (BITSPERLONG-2))) >> (BITSPERLONG-2))
+
+/* usqrt:
+    ENTRY x: unsigned long
+    EXIT  returns floor(sqrt(x) * pow(2, BITSPERLONG/2))
+
+    Since the square root never uses more than half the bits
+    of the input, we use the other half of the bits to contain
+    extra bits of precision after the binary point.
+
+    EXAMPLE
+        suppose BITSPERLONG = 32
+        then    usqrt(144) = 786432 = 12 * 65536
+                usqrt(32) = 370727 = 5.66 * 65536
+
+    NOTES
+        (1) change BITSPERLONG to BITSPERLONG/2 if you do not want
+            the answer scaled.  Indeed, if you want n bits of
+            precision after the binary point, use BITSPERLONG/2+n.
+            The code assumes that BITSPERLONG is even.
+        (2) This is really better off being written in assembly.
+            The line marked below is really a "arithmetic shift left"
+            on the double-long value with r in the upper half
+            and x in the lower half.  This operation is typically
+            expressible in only one or two assembly instructions.
+        (3) Unrolling this loop is probably not a bad idea.
+
+    ALGORITHM
+        The calculations are the base-two analogue of the square
+        root algorithm we all learned in grammar school.  Since we're
+        in base 2, there is only one nontrivial trial multiplier.
+
+        Notice that absolutely no multiplications or divisions are performed.
+        This means it'll be fast on a wide range of processors.
+*/
+
+uint32_t usqrt(uint32_t x)
+{
+      uint32_t a = 0L;                   /* accumulator      */
+      uint32_t r = 0L;                   /* remainder        */
+      uint32_t e = 0L;                   /* trial product    */
+
+      int i;
+
+      for (i = 0; i < BITSPERLONG; i++)   /* NOTE 1 */
+      {
+            r = (r << 2) + TOP2BITS(x); x <<= 2; /* NOTE 2 */
+            a <<= 1;
+            e = (a << 1) + 1;
+            if (r >= e)
+            {
+                  r -= e;
+                  a++;
+            }
+      }
+      return a;
+}
+
+
 static void precalc_modulation(struct high_current_modulation_cfg *cfg) {
     /* transpose brightness values from cfg->val to cfg->data_{high,low} */
 
@@ -40,6 +100,15 @@ static void precalc_modulation(struct high_current_modulation_cfg *cfg) {
         /* fixme too slow
         float value = powf(cfg->val[i] / (float)0xffff, cfg->gamma);
         uint32_t value_ui = value * 0xffffffff + 0.5f;
+        */
+
+        /* approximate gamma */
+        /*
+        uint16_t v = cfg->val[i];
+        uint64_t sqr = usqrt(v);
+        uint64_t ssqr = usqrt(sqr>>16);
+        uint64_t vsq = ((uint32_t)v)*((uint32_t)v);
+        uint32_t value_ui = (((vsq * sqr) >> 24) * ssqr)>>20;
         */
         uint32_t value_ui = cfg->val[i]<<16;
 
@@ -79,7 +148,7 @@ static THD_FUNCTION(HighCurrentModulation, vcfg) {
     int j = 0;
     while (true) {
         chThdSleepMilliseconds(1);
-        j = (j+5)%0x10000;
+        j = (j+1)%0x1000;
         for (size_t i=0; i<sizeof(cfg->val)/sizeof(cfg->val[0]); i++) {
             cfg->val[i] = j;
         }
