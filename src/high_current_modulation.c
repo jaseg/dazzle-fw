@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 #include <ch.h>
+#include <osal.h>
 #include <hal.h>
 
 #include <dazzle.h>
@@ -29,8 +30,11 @@ static uint32_t xorshift32(void) {
 
 static void precalc_modulation(struct high_current_modulation_cfg *cfg) {
     /* transpose brightness values from cfg->val to cfg->data_{high,low} */
-    memset(cfg->p.data_high, 0, sizeof(cfg->p.data_high));
-    memset(cfg->p.data_low, 0, sizeof(cfg->p.data_low));
+
+    size_t act = cfg->p.writer;
+
+    memset(cfg->p.data_high[act], 0, sizeof(cfg->p.data_high[act]));
+    memset(cfg->p.data_low[act], 0, sizeof(cfg->p.data_low[act]));
 
     for (size_t i=0; i<cfg->channel_count; i++) {
         /* fixme too slow
@@ -51,16 +55,22 @@ static void precalc_modulation(struct high_current_modulation_cfg *cfg) {
         uint32_t low_bit = high_bit / cfg->range_scale;
         for (size_t bit=0; bit<cfg->bit_depth; bit++) {
             if (value_ui > high_bit) {
-                cfg->p.data_high[cfg->bit_depth-1-bit][reg_index_high] |= bit_mask_high;
+                cfg->p.data_high[act][cfg->bit_depth-1-bit][reg_index_high] |= bit_mask_high;
                 value_ui -= high_bit;
             } else if (value_ui > low_bit) {
-                cfg->p.data_low[cfg->bit_depth-1-bit][3-reg_index_low] |= bit_mask_low;
+                cfg->p.data_low[act][cfg->bit_depth-1-bit][3-reg_index_low] |= bit_mask_low;
                 value_ui -= low_bit;
             }
             high_bit >>= 1;
             low_bit >>= 1;
         }
     }
+
+    osalSysLock();
+    cfg->p.writer = cfg->p.ready;
+    cfg->p.ready = act;
+    cfg->p.update = true;
+    osalSysUnlock();
 }
 
 static THD_FUNCTION(HighCurrentModulation, vcfg) {
@@ -68,15 +78,18 @@ static THD_FUNCTION(HighCurrentModulation, vcfg) {
 
     int j = 0;
     while (true) {
-        chThdSleepMilliseconds(2);
+        chThdSleepMilliseconds(1);
         j = (j+5)%0x10000;
         for (size_t i=0; i<sizeof(cfg->val)/sizeof(cfg->val[0]); i++) {
             cfg->val[i] = j;
         }
         precalc_modulation(cfg);
 
-        //memset(cfg->p.data_high, 0x00, sizeof(cfg->p.data_high));
-        //memset(cfg->p.data_low, 0x00, sizeof(cfg->p.data_low)); /* TODO data_low is inverted */
+        /*
+        memset(cfg->p.data_high, 0x00, sizeof(cfg->p.data_high));
+        memset(cfg->p.data_high[6], 0xff, sizeof(cfg->p.data_low[0]));
+        memset(cfg->p.data_low, 0x00, sizeof(cfg->p.data_low));
+        */
         //memset(cfg->dot_correction, j, sizeof(cfg->dot_correction));
 
         //nvicDisableVector(STM32_TIM15_NUMBER);
@@ -96,6 +109,9 @@ static THD_FUNCTION(HighCurrentModulation, vcfg) {
         }
         */
     }
+}
+
+void calculate_gamma_table(struct high_current_modulation_cfg *cfg, float gamma) {
 }
 
 static struct high_current_modulation_cfg *tim15_cfg;
@@ -130,8 +146,17 @@ OSAL_IRQ_HANDLER(STM32_TIM15_HANDLER) {
         cfg->p.bit_pos = bit_pos;
         bit_pos = bit_pos_lookup[bit_pos];
 
-        spiStartSendI(cfg->spid_high, (cfg->channel_count+7)/8, cfg->p.data_high[bit_pos]);
-        spiStartSendI(cfg->spid_low, (cfg->channel_count+7)/8, cfg->p.data_low[bit_pos]);
+        size_t act;
+        if (cfg->p.update) {
+            act = cfg->p.ready;
+            cfg->p.ready = cfg->p.reader;
+            cfg->p.reader = act;
+            cfg->p.update = false;
+        } else {
+            act = cfg->p.reader;
+        }
+        spiStartSendI(cfg->spid_high, (cfg->channel_count+7)/8, cfg->p.data_high[act][bit_pos]);
+        spiStartSendI(cfg->spid_low, (cfg->channel_count+7)/8, cfg->p.data_low[act][bit_pos]);
         TIM15->ARR = cfg->unblank_period_high[bit_pos];
         TIM1->CCR3 = cfg->unblank_period_low[bit_pos];
         TIM1->CCR1 = 0;
@@ -182,6 +207,12 @@ static void tlc5922_load_dot_correction(struct high_current_modulation_cfg *cfg)
 void dazzle_high_current_modulation_run(struct high_current_modulation_cfg *cfg) {
     cfg->p.is_blank = false;
     cfg->p.bit_pos = 0;
+    cfg->p.reader = 0;
+    cfg->p.ready = 1;
+    cfg->p.writer = 2;
+    cfg->p.update = 0;
+    memset(cfg->p.data_low, 0, sizeof(cfg->p.data_low));
+    memset(cfg->p.data_high, 0, sizeof(cfg->p.data_high));
 
     cfg->spic_high.circular = false;
     cfg->spic_high.slave = false;

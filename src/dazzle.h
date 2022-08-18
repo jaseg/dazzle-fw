@@ -22,8 +22,12 @@ struct high_current_modulation_cfg {
     struct {
         THD_WORKING_AREA(_wa, DAZZLE_HCM_WA_SIZE);
         thread_t *thread;
-        uint8_t data_high[DAZZLE_HCM_MAX_BIT_DEPTH][DAZZLE_HCM_MAX_REGISTERS];
-        uint8_t data_low[DAZZLE_HCM_MAX_BIT_DEPTH][DAZZLE_HCM_MAX_REGISTERS];
+        uint8_t data_high[3][DAZZLE_HCM_MAX_BIT_DEPTH][DAZZLE_HCM_MAX_REGISTERS];
+        uint8_t data_low[3][DAZZLE_HCM_MAX_BIT_DEPTH][DAZZLE_HCM_MAX_REGISTERS];
+        size_t reader;
+        size_t ready;
+        size_t writer;
+        bool update;
         bool is_blank;
         size_t bit_pos;
     } p;
