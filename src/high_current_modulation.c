@@ -148,9 +148,9 @@ static THD_FUNCTION(HighCurrentModulation, vcfg) {
     int j = 0;
     while (true) {
         chThdSleepMilliseconds(1);
-        j = (j+1)%0x1000;
+        j = (j+1)%0x800;
         for (size_t i=0; i<sizeof(cfg->val)/sizeof(cfg->val[0]); i++) {
-            cfg->val[i] = j;
+            cfg->val[i] = j+200;
         }
         precalc_modulation(cfg);
 
