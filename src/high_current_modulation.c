@@ -135,11 +135,11 @@ static void precalc_modulation(struct high_current_modulation_cfg *cfg) {
         }
     }
 
-    osalSysLock();
-    cfg->p.writer = cfg->p.ready;
-    cfg->p.ready = act;
-    cfg->p.update = true;
-    osalSysUnlock();
+    if (!cfg->p.update) {
+        cfg->p.writer = cfg->p.ready;
+        cfg->p.ready = act;
+        cfg->p.update = true;
+    }
 }
 
 static THD_FUNCTION(HighCurrentModulation, vcfg) {
@@ -148,17 +148,28 @@ static THD_FUNCTION(HighCurrentModulation, vcfg) {
     int j = 0;
     while (true) {
         chThdSleepMilliseconds(1);
-        j = (j+1)%0x800;
+        j = (j+1)%0x10000;
         for (size_t i=0; i<sizeof(cfg->val)/sizeof(cfg->val[0]); i++) {
-            cfg->val[i] = j+200;
+            cfg->val[i] = j;
         }
         precalc_modulation(cfg);
 
+        /* FIXME DEBUG CODE */
         /*
-        memset(cfg->p.data_high, 0x00, sizeof(cfg->p.data_high));
-        memset(cfg->p.data_high[6], 0xff, sizeof(cfg->p.data_low[0]));
-        memset(cfg->p.data_low, 0x00, sizeof(cfg->p.data_low));
+        for (size_t i=0; i<cfg->bit_depth; i++) {
+            cfg->unblank_period_high[i] = (2<<i)*cfg->base_divider + cfg->high_offset_correction + cfg->front_porch;
+            cfg->unblank_period_low[i] = (2<<i)*cfg->base_divider + cfg->low_offset_correction;
+        }
+
+        memset(cfg->p.data_high[cfg->p.reader], 0x00, sizeof(cfg->p.data_high[0]));
+        memset(cfg->p.data_low[cfg->p.reader], 0x00, sizeof(cfg->p.data_low[0]));
+        if (j>=5) {
+            memset(cfg->p.data_low[cfg->p.reader][9], 0xff, sizeof(cfg->p.data_low[0][0]));
+        } else {
+            memset(cfg->p.data_high[cfg->p.reader][0], 0xff, sizeof(cfg->p.data_high[0][0]));
+        }
         */
+
         //memset(cfg->dot_correction, j, sizeof(cfg->dot_correction));
 
         //nvicDisableVector(STM32_TIM15_NUMBER);
@@ -186,6 +197,7 @@ void calculate_gamma_table(struct high_current_modulation_cfg *cfg, float gamma)
 static struct high_current_modulation_cfg *tim15_cfg;
 OSAL_IRQ_HANDLER(STM32_TIM15_HANDLER) {
     OSAL_IRQ_PROLOGUE();
+    GPIOA->BSRR.H.set = 1<<15;
     TIM15->SR = 0;
 
     static size_t bit_pos_lookup[10] = {0,1,2,3,4,5,6,7,8,9};
@@ -215,6 +227,11 @@ OSAL_IRQ_HANDLER(STM32_TIM15_HANDLER) {
         cfg->p.bit_pos = bit_pos;
         bit_pos = bit_pos_lookup[bit_pos];
 
+        TIM15->ARR = cfg->unblank_period_high[bit_pos];
+        TIM1->CCR3 = cfg->unblank_period_low[bit_pos];
+        TIM1->CCR2 = 0;
+        TIM1->CCR1 = 0;
+
         size_t act;
         if (cfg->p.update) {
             act = cfg->p.ready;
@@ -226,17 +243,15 @@ OSAL_IRQ_HANDLER(STM32_TIM15_HANDLER) {
         }
         spiStartSendI(cfg->spid_high, (cfg->channel_count+7)/8, cfg->p.data_high[act][bit_pos]);
         spiStartSendI(cfg->spid_low, (cfg->channel_count+7)/8, cfg->p.data_low[act][bit_pos]);
-        TIM15->ARR = cfg->unblank_period_high[bit_pos];
-        TIM1->CCR3 = cfg->unblank_period_low[bit_pos];
-        TIM1->CCR1 = 0;
 
     } else {
-        palClearLine(cfg->sr_clear_line);
         TIM15->ARR = cfg->blank_period;
         TIM1->CCR3 = 0;
         TIM1->CCR1 = cfg->low_strobe_allowance;
+        palClearLine(cfg->sr_clear_line);
     }
 
+    GPIOA->BSRR.H.clear = 1<<15;
     OSAL_IRQ_EPILOGUE();
 }
 
@@ -259,7 +274,9 @@ static void tlc5922_pack_dot_correction(const uint8_t input[16], uint8_t output[
 }
 
 static void tlc5922_load_dot_correction(struct high_current_modulation_cfg *cfg) {
-    palSetLine(cfg->tlc_mode_line);
+    uint16_t old_arr = TIM1->ARR;
+    uint16_t old_ccmr2 = TIM1->CCMR2;
+    TIM1->CCMR2 = (TIM1->CCMR2 & ~STM32_TIM_CCMR2_OC2M_Mask) | STM32_TIM_CCMR2_OC2M(5); /* force high */
     uint8_t data[(DAZZLE_HCM_MAX_REGISTERS+1)/2*14];
     for (size_t i=0; i<(cfg->channel_count+15)/16; i++) {
         tlc5922_pack_dot_correction(&cfg->dot_correction[i*16], data);
@@ -270,7 +287,8 @@ static void tlc5922_load_dot_correction(struct high_current_modulation_cfg *cfg)
     TIM1->CCR1 = 24; /* Generate a train of strobe pulses */
     chThdSleepMilliseconds(5);
     palClearLine(cfg->tlc_mode_line);
-    TIM1->ARR = 0xffff;
+    TIM1->ARR = old_arr;
+    TIM1->CCMR2 = old_ccmr2;
 }
 
 void dazzle_high_current_modulation_run(struct high_current_modulation_cfg *cfg) {
@@ -348,7 +366,8 @@ void dazzle_high_current_modulation_run(struct high_current_modulation_cfg *cfg)
     TIM1->CCR1 = 24;
     TIM1->ARR = 0xffff;
     TIM1->CCMR1 = STM32_TIM_CCMR1_OC1PE | STM32_TIM_CCMR1_OC1M(6); /* OC1: TLC / low strobe */
-    TIM1->CCMR2 = STM32_TIM_CCMR2_OC3PE | STM32_TIM_CCMR2_OC3M(7); /* OC3: TLC / low blank */
+    TIM1->CCMR2 = STM32_TIM_CCMR2_OC3PE | STM32_TIM_CCMR2_OC3M(7) |\ /* OC3: TLC / low blank */
+                  STM32_TIM_CCMR2_OC2PE | STM32_TIM_CCMR2_OC2M(6); /* OC2: SR / high clear AND TLC mode (timer used for clear) */
     TIM1->CCER = STM32_TIM_CCER_CC1E | STM32_TIM_CCER_CC1P | STM32_TIM_CCER_CC3E;
     TIM1->BDTR = STM32_TIM_BDTR_MOE;
     TIM1->CR1 |= STM32_TIM_CR1_CEN;

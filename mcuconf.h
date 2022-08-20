@@ -52,7 +52,7 @@
 #define STM32_HPRE                          STM32_HPRE_DIV1
 #define STM32_PPRE                          STM32_PPRE_DIV1
 #define STM32_MCOSEL                        STM32_MCOSEL_NOCLOCK
-#define STM32_MCOPRE                        STM32_MCOPRE_DIV1
+#define STM32_MCOPRE                        STM32_MCOPRE_DIV16
 #define STM32_PLLNODIV                      STM32_PLLNODIV_DIV2
 #define STM32_USBSW                         STM32_USBSW_HSI48
 #define STM32_CECSW                         STM32_CECSW_HSI
@@ -72,7 +72,7 @@
 #define STM32_IRQ_USART1_PRIORITY           3
 #define STM32_IRQ_USART2_PRIORITY           3
 #define STM32_IRQ_USART3_8_PRIORITY         3
-#define STM32_IRQ_TIM15_PRIORITY            2
+#define STM32_IRQ_TIM15_PRIORITY            0
 
 /*
  * ADC driver system settings.

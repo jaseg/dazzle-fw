@@ -62,7 +62,7 @@
  */
 #define GPIOA_ENC_SW                0U
 #define GPIOA_SR_STROBE             1U
-#define GPIOA_SR_CLR                2U
+#define GPIOA_SR_CLEAR              2U
 #define GPIOA_BIGBUCK_EN            3U
 #define GPIOA_PIN4                  4U
 #define GPIOA_PIN5                  5U
@@ -103,7 +103,7 @@
  */
 #define LINE_ENC_SW                 PAL_LINE(GPIOA, GPIOA_ENC_SW)
 #define LINE_SR_STROBE              PAL_LINE(GPIOA, GPIOA_SR_STROBE)
-#define LINE_SR_CLR                 PAL_LINE(GPIOA, GPIOA_SR_CLR)
+#define LINE_SR_CLEAR               PAL_LINE(GPIOA, GPIOA_SR_CEAR)
 #define LINE_SR_SCK                 PAL_LINE(GPIOB, GPIOB_SR_SCK)
 #define LINE_SR_DIN                 PAL_LINE(GPIOB, GPIOB_SR_DIN)
 #define LINE_BIGBUCK_EN             PAL_LINE(GPIOA, GPIOA_BIGBUCK_EN)
@@ -173,14 +173,14 @@
 
 #define VAL_GPIOA_MODER             (PIN_MODE_INPUT(GPIOA_ENC_SW) |\
                                      PIN_MODE_ALTERNATE(GPIOA_SR_STROBE) |\
-                                     PIN_MODE_OUTPUT(GPIOA_SR_CLR) |\
+                                     PIN_MODE_INPUT(GPIOA_SR_CLEAR) |\
                                      PIN_MODE_OUTPUT(GPIOA_BIGBUCK_EN) |\
                                      PIN_MODE_INPUT(GPIOA_PIN4) |\
                                      PIN_MODE_INPUT(GPIOA_PIN5) |\
                                      PIN_MODE_ALTERNATE(GPIOA_ENC_A) |\
                                      PIN_MODE_ALTERNATE(GPIOA_ENC_B) |\
                                      PIN_MODE_ALTERNATE(GPIOA_TLC_STROBE) |\
-                                     PIN_MODE_OUTPUT(GPIOA_TLC_MODE) |\
+                                     PIN_MODE_ALTERNATE(GPIOA_TLC_MODE) |\
                                      PIN_MODE_ALTERNATE(GPIOA_TLC_BLANK) |\
                                      PIN_MODE_INPUT(GPIOA_USB_DM) |\
                                      PIN_MODE_INPUT(GPIOA_USB_DP) |\
@@ -189,7 +189,7 @@
                                      PIN_MODE_OUTPUT(GPIOA_PIN15))
 #define VAL_GPIOA_OTYPER            (0)
 #define VAL_GPIOA_OSPEEDR           (PIN_OSPEED_HIGH(GPIOA_SR_STROBE) |\
-                                     PIN_OSPEED_HIGH(GPIOA_SR_CLR) |\
+                                     PIN_OSPEED_HIGH(GPIOA_SR_CLEAR) |\
                                      PIN_OSPEED_HIGH(GPIOA_BIGBUCK_EN) |\
                                      PIN_OSPEED_HIGH(GPIOA_TLC_STROBE) |\
                                      PIN_OSPEED_HIGH(GPIOA_TLC_MODE) |\
@@ -203,10 +203,12 @@
                                      PIN_PUPDR_PULLDOWN(GPIOA_SWCLK))
 #define VAL_GPIOA_ODR               (0)
 #define VAL_GPIOA_AFRL              (PIN_AFIO_AF(GPIOA_SR_STROBE, 5U) |\
+                                     PIN_AFIO_AF(GPIOA_SR_CLEAR, 0U) |\
                                      PIN_AFIO_AF(GPIOA_ENC_A, 1U) |\
                                      PIN_AFIO_AF(GPIOA_ENC_B, 1U))
 #define VAL_GPIOA_AFRH              (PIN_AFIO_AF(GPIOA_TLC_STROBE, 2U) |\
                                      PIN_AFIO_AF(GPIOA_TLC_BLANK, 2U) |\
+                                     PIN_AFIO_AF(GPIOA_TLC_MODE, 2U) |\
                                      PIN_AFIO_AF(GPIOA_SWDIO, 0U) |\
                                      PIN_AFIO_AF(GPIOA_SWCLK, 0U))
 

@@ -36,7 +36,6 @@ struct high_current_modulation_cfg {
     SPIConfig spic_high; /* Set only CR1 here (to set baudrate) */
     SPIConfig spic_low; /* Set only CR1 here (to set baudrate) */
     ioline_t sr_clear_line;
-    ioline_t tlc_mode_line;
     int range_scale;
     float gamma;
     int front_porch;
