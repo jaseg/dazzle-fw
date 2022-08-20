@@ -126,11 +126,14 @@ static void precalc_modulation(struct high_current_modulation_cfg *cfg) {
             if (value_ui > high_bit) {
                 cfg->p.data_high[act][cfg->bit_depth-1-bit][reg_index_high] |= bit_mask_high;
                 value_ui -= high_bit;
-            } else if (value_ui > low_bit) {
+            }
+            high_bit >>= 1;
+        }
+        for (size_t bit=0; bit<cfg->bit_depth; bit++) {
+            if (value_ui > low_bit) {
                 cfg->p.data_low[act][cfg->bit_depth-1-bit][3-reg_index_low] |= bit_mask_low;
                 value_ui -= low_bit;
             }
-            high_bit >>= 1;
             low_bit >>= 1;
         }
     }
@@ -147,8 +150,13 @@ static THD_FUNCTION(HighCurrentModulation, vcfg) {
 
     int j = 0;
     while (true) {
-        chThdSleepMilliseconds(1);
-        j = (j+1)%0x10000;
+        chThdSleepMilliseconds(10);
+        //j = (j+17)%0x10000;
+        j = (j+1+j/200+j/2000+j/20000);
+        if (j >= 0x10000) {
+            j = 0;
+        }
+        //j = (j+1)%20;
         for (size_t i=0; i<sizeof(cfg->val)/sizeof(cfg->val[0]); i++) {
             cfg->val[i] = j;
         }
@@ -160,13 +168,21 @@ static THD_FUNCTION(HighCurrentModulation, vcfg) {
             cfg->unblank_period_high[i] = (2<<i)*cfg->base_divider + cfg->high_offset_correction + cfg->front_porch;
             cfg->unblank_period_low[i] = (2<<i)*cfg->base_divider + cfg->low_offset_correction;
         }
+        */
 
-        memset(cfg->p.data_high[cfg->p.reader], 0x00, sizeof(cfg->p.data_high[0]));
-        memset(cfg->p.data_low[cfg->p.reader], 0x00, sizeof(cfg->p.data_low[0]));
+        /*
+        size_t act = cfg->p.writer;
+        memset(cfg->p.data_high[act], 0x00, sizeof(cfg->p.data_high[0]));
+        memset(cfg->p.data_low[act], 0x00, sizeof(cfg->p.data_low[0]));
         if (j>=5) {
-            memset(cfg->p.data_low[cfg->p.reader][9], 0xff, sizeof(cfg->p.data_low[0][0]));
+            memset(cfg->p.data_low[act][9], 0xff, sizeof(cfg->p.data_low[0][0]));
         } else {
-            memset(cfg->p.data_high[cfg->p.reader][0], 0xff, sizeof(cfg->p.data_high[0][0]));
+            memset(cfg->p.data_high[act][0], 0xff, sizeof(cfg->p.data_high[0][0]));
+        }
+        if (!cfg->p.update) {
+            cfg->p.writer = cfg->p.ready;
+            cfg->p.ready = act;
+            cfg->p.update = true;
         }
         */
 
@@ -205,8 +221,6 @@ OSAL_IRQ_HANDLER(STM32_TIM15_HANDLER) {
     bool is_blank = cfg->p.is_blank;
     cfg->p.is_blank = !is_blank;
     if (is_blank) {
-        palSetLine(cfg->sr_clear_line);
-
         /*
         size_t bit_pos = xorshift32() % cfg->bit_depth + 4;
         size_t duration_factor = 1;
@@ -228,8 +242,8 @@ OSAL_IRQ_HANDLER(STM32_TIM15_HANDLER) {
         bit_pos = bit_pos_lookup[bit_pos];
 
         TIM15->ARR = cfg->unblank_period_high[bit_pos];
+        TIM15->CCR1 = cfg->unblank_width_high[bit_pos];
         TIM1->CCR3 = cfg->unblank_period_low[bit_pos];
-        TIM1->CCR2 = 0;
         TIM1->CCR1 = 0;
 
         size_t act;
@@ -246,9 +260,9 @@ OSAL_IRQ_HANDLER(STM32_TIM15_HANDLER) {
 
     } else {
         TIM15->ARR = cfg->blank_period;
+        TIM15->CCR1 = cfg->blank_period - cfg->front_porch;
         TIM1->CCR3 = 0;
         TIM1->CCR1 = cfg->low_strobe_allowance;
-        palClearLine(cfg->sr_clear_line);
     }
 
     GPIOA->BSRR.H.clear = 1<<15;
@@ -275,8 +289,9 @@ static void tlc5922_pack_dot_correction(const uint8_t input[16], uint8_t output[
 
 static void tlc5922_load_dot_correction(struct high_current_modulation_cfg *cfg) {
     uint16_t old_arr = TIM1->ARR;
-    uint16_t old_ccmr2 = TIM1->CCMR2;
-    TIM1->CCMR2 = (TIM1->CCMR2 & ~STM32_TIM_CCMR2_OC2M_Mask) | STM32_TIM_CCMR2_OC2M(5); /* force high */
+    //uint16_t old_ccmr2 = TIM1->CCMR2;
+    palSetLine(cfg->tlc_mode_line);
+    //TIM1->CCMR2 = (TIM1->CCMR2 & ~STM32_TIM_CCMR2_OC2M_Mask) | STM32_TIM_CCMR2_OC2M(5); /* force high */
     uint8_t data[(DAZZLE_HCM_MAX_REGISTERS+1)/2*14];
     for (size_t i=0; i<(cfg->channel_count+15)/16; i++) {
         tlc5922_pack_dot_correction(&cfg->dot_correction[i*16], data);
@@ -288,7 +303,7 @@ static void tlc5922_load_dot_correction(struct high_current_modulation_cfg *cfg)
     chThdSleepMilliseconds(5);
     palClearLine(cfg->tlc_mode_line);
     TIM1->ARR = old_arr;
-    TIM1->CCMR2 = old_ccmr2;
+    //TIM1->CCMR2 = old_ccmr2;
 }
 
 void dazzle_high_current_modulation_run(struct high_current_modulation_cfg *cfg) {
@@ -327,7 +342,13 @@ void dazzle_high_current_modulation_run(struct high_current_modulation_cfg *cfg)
 
     if (cfg->unblank_period_high[0] == 0) {
         for (size_t i=0; i<cfg->bit_depth; i++) {
-            cfg->unblank_period_high[i] = (2<<i)*cfg->base_divider + cfg->high_offset_correction;
+            int power = (2<<i)*cfg->base_divider;
+            if (power < cfg->min_unblank_period) {
+                cfg->unblank_period_high[i] = cfg->min_unblank_period;
+            } else {
+                cfg->unblank_period_high[i] = power;
+            }
+            cfg->unblank_width_high[i] = power + cfg->high_offset_correction - cfg->front_porch;
             cfg->unblank_period_low[i] = (2<<i)*cfg->base_divider + cfg->low_offset_correction;
         }
     }
@@ -349,9 +370,8 @@ void dazzle_high_current_modulation_run(struct high_current_modulation_cfg *cfg)
     TIM15->CR2 = STM32_TIM_CR2_MMS(2);
     TIM15->PSC = cfg->prescaler-1;
     TIM15->ARR = 24; /* arbitrary init value */
-    TIM15->CCMR1 = STM32_TIM_CCMR1_OC1PE | STM32_TIM_CCMR1_OC1M(6); /* shift register / high strobe */
-    TIM15->CCER = STM32_TIM_CCER_CC1NE | STM32_TIM_CCER_CC1NP;
-    TIM15->CCR1 = cfg->front_porch;
+    TIM15->CCMR1 = STM32_TIM_CCMR1_OC1PE | STM32_TIM_CCMR1_OC1M(7); /* shift register / high strobe */
+    TIM15->CCER = STM32_TIM_CCER_CC1NE;
     TIM15->DIER = STM32_TIM_DIER_UIE;
     TIM15->CR1 |= STM32_TIM_CR1_CEN;
     TIM15->BDTR = STM32_TIM_BDTR_MOE;
@@ -366,8 +386,7 @@ void dazzle_high_current_modulation_run(struct high_current_modulation_cfg *cfg)
     TIM1->CCR1 = 24;
     TIM1->ARR = 0xffff;
     TIM1->CCMR1 = STM32_TIM_CCMR1_OC1PE | STM32_TIM_CCMR1_OC1M(6); /* OC1: TLC / low strobe */
-    TIM1->CCMR2 = STM32_TIM_CCMR2_OC3PE | STM32_TIM_CCMR2_OC3M(7) |\ /* OC3: TLC / low blank */
-                  STM32_TIM_CCMR2_OC2PE | STM32_TIM_CCMR2_OC2M(6); /* OC2: SR / high clear AND TLC mode (timer used for clear) */
+    TIM1->CCMR2 = STM32_TIM_CCMR2_OC3PE | STM32_TIM_CCMR2_OC3M(7); /* OC3: TLC / low blank AND SR clear */
     TIM1->CCER = STM32_TIM_CCER_CC1E | STM32_TIM_CCER_CC1P | STM32_TIM_CCER_CC3E;
     TIM1->BDTR = STM32_TIM_BDTR_MOE;
     TIM1->CR1 |= STM32_TIM_CR1_CEN;

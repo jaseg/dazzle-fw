@@ -103,7 +103,7 @@
  */
 #define LINE_ENC_SW                 PAL_LINE(GPIOA, GPIOA_ENC_SW)
 #define LINE_SR_STROBE              PAL_LINE(GPIOA, GPIOA_SR_STROBE)
-#define LINE_SR_CLEAR               PAL_LINE(GPIOA, GPIOA_SR_CEAR)
+#define LINE_SR_CLEAR               PAL_LINE(GPIOA, GPIOA_SR_CLEAR)
 #define LINE_SR_SCK                 PAL_LINE(GPIOB, GPIOB_SR_SCK)
 #define LINE_SR_DIN                 PAL_LINE(GPIOB, GPIOB_SR_DIN)
 #define LINE_BIGBUCK_EN             PAL_LINE(GPIOA, GPIOA_BIGBUCK_EN)
@@ -180,7 +180,7 @@
                                      PIN_MODE_ALTERNATE(GPIOA_ENC_A) |\
                                      PIN_MODE_ALTERNATE(GPIOA_ENC_B) |\
                                      PIN_MODE_ALTERNATE(GPIOA_TLC_STROBE) |\
-                                     PIN_MODE_ALTERNATE(GPIOA_TLC_MODE) |\
+                                     PIN_MODE_OUTPUT(GPIOA_TLC_MODE) |\
                                      PIN_MODE_ALTERNATE(GPIOA_TLC_BLANK) |\
                                      PIN_MODE_INPUT(GPIOA_USB_DM) |\
                                      PIN_MODE_INPUT(GPIOA_USB_DP) |\

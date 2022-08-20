@@ -36,6 +36,7 @@ struct high_current_modulation_cfg {
     SPIConfig spic_high; /* Set only CR1 here (to set baudrate) */
     SPIConfig spic_low; /* Set only CR1 here (to set baudrate) */
     ioline_t sr_clear_line;
+    ioline_t tlc_mode_line;
     int range_scale;
     float gamma;
     int front_porch;
@@ -44,12 +45,14 @@ struct high_current_modulation_cfg {
     size_t bit_depth;
     int high_offset_correction;
     int low_offset_correction;
+    int min_unblank_period;
     int base_divider;
     int prescaler;
     uint16_t val[DAZZLE_HCM_MAX_REGISTERS*8];
     int blank_period; /* automatically calculated if zero */
     int unblank_period_high[DAZZLE_HCM_MAX_BIT_DEPTH]; /* automatically calculated when offset_correction is given or when
                                                      element at index [0] is zero */
+    int unblank_width_high[DAZZLE_HCM_MAX_BIT_DEPTH];
     int unblank_period_low[DAZZLE_HCM_MAX_BIT_DEPTH];
     uint8_t dot_correction[(DAZZLE_HCM_MAX_REGISTERS+1)/2*16];
     uint8_t high_channel_map[DAZZLE_HCM_MAX_REGISTERS*8];
