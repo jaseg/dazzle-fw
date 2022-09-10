@@ -148,29 +148,50 @@ static void precalc_modulation(struct high_current_modulation_cfg *cfg) {
 int dbg_num = 0;
 uint8_t d0=0, d1=0, d2=0, d3=0;
 
+
+#  define HSV2RGB(_H, _S, _V, _R, _G, _B) \
+    const uint8_t __H = _H; \
+    const uint8_t __S = _S; \
+    const uint8_t __V = _V; \
+    const uint32_t s = (6 * (uint32_t)__H) >> 8;               /* the segment 0..5 (360/60 * [0..255] / 256) */ \
+    const uint32_t t = (6 * (uint32_t)__H) & 0xff;             /* within the segment 0..255 (360/60 * [0..255] % 256) */ \
+    const uint32_t l = ((uint32_t)__V * (255 - (uint32_t)__S)) >> 8; /* lower level */ \
+    const uint32_t rf = ((uint32_t)__V * (uint32_t)__S * t) >> 16;    /* ramp */ \
+    switch (s) \
+    { \
+        case 0: (_R) = (uint8_t)__V;        (_G) = (uint8_t)(l + rf);    (_B) = (uint8_t)l;          break; \
+        case 1: (_R) = (uint8_t)(__V - rf);  (_G) = (uint8_t)__V;        (_B) = (uint8_t)l;          break; \
+        case 2: (_R) = (uint8_t)l;          (_G) = (uint8_t)__V;        (_B) = (uint8_t)(l + rf);    break; \
+        case 3: (_R) = (uint8_t)l;          (_G) = (uint8_t)(__V - rf);  (_B) = (uint8_t)__V;        break; \
+        case 4: (_R) = (uint8_t)(l + rf);    (_G) = (uint8_t)l;          (_B) = (uint8_t)__V;        break; \
+        case 5: (_R) = (uint8_t)__V;        (_G) = (uint8_t)l;          (_B) = (uint8_t)(__V - rf);  break; \
+    }
+
 static THD_FUNCTION(HighCurrentModulation, vcfg) {
     struct high_current_modulation_cfg *cfg = vcfg;
 
     int j = 0;
     int k = 0;
     while (true) {
-        chThdSleepMilliseconds(1);
+        chThdSleepMilliseconds(10);
         //j = (j+17)%0x10000;
-        /*
-        j = (j+1+j/200+j/2000+j/20000);
-        if (j >= 0x10000) {
-            j = 0;
-            k += 1;
-            if (k >= 9) {
-                k = 0;
+        k ++;
+        if (k >= 360) {
+            k = 0;
+            //j += 10; //j = (j+1+j/200+j/2000+j/20000);
+            j++;
+            if (j >= 8) {
+                j = 0;
             }
         }
-        */
+
+        /*
         j ++;
         if (j >= 0x0800) {
             j = 0;
             asm volatile ("nop");
         }
+        */
         //j = (j+1)%20;
         /*
         for (size_t i=0; i<sizeof(cfg->val)/sizeof(cfg->val[0]); i++) {
@@ -181,13 +202,17 @@ static THD_FUNCTION(HighCurrentModulation, vcfg) {
             }
         }
         */
-        /*
         memset(cfg->val, 0, sizeof(cfg->val));
-        cfg->val[3*k+0] = j;
-        cfg->val[3*k+1] = j;
-        cfg->val[3*k+2] = j;
+        uint8_t r, g, b;
+        {
+            HSV2RGB(k, 255, 255, r, g, b);
+        }
+        for (int l=0; l<9; l++) {
+            cfg->val[3*l + 0] = r<<j;
+            cfg->val[3*l + 1] = g<<j;
+            cfg->val[3*l + 2] = b<<j;
+        }
         precalc_modulation(cfg);
-        */
 
         /*
         size_t act = cfg->p.writer;
@@ -208,11 +233,13 @@ static THD_FUNCTION(HighCurrentModulation, vcfg) {
         //cfg->p.data_low[act][7][2] = d2;
         //cfg->p.data_low[act][7][3] = d3;
 
+        /*
         if (!cfg->p.update) {
             cfg->p.writer = cfg->p.ready;
             cfg->p.ready = act;
             cfg->p.update = true;
         }
+        */
 
         /* FIXME DEBUG CODE */
         /*
