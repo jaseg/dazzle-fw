@@ -131,7 +131,7 @@ static void precalc_modulation(struct high_current_modulation_cfg *cfg) {
         }
         for (size_t bit=0; bit<cfg->bit_depth; bit++) {
             if (value_ui > low_bit) {
-                cfg->p.data_low[act][cfg->bit_depth-1-bit][3-reg_index_low] |= bit_mask_low;
+                cfg->p.data_low[act][cfg->bit_depth-1-bit][reg_index_low] |= bit_mask_low;
                 value_ui -= low_bit;
             }
             low_bit >>= 1;
@@ -145,22 +145,74 @@ static void precalc_modulation(struct high_current_modulation_cfg *cfg) {
     }
 }
 
+int dbg_num = 0;
+uint8_t d0=0, d1=0, d2=0, d3=0;
+
 static THD_FUNCTION(HighCurrentModulation, vcfg) {
     struct high_current_modulation_cfg *cfg = vcfg;
 
     int j = 0;
+    int k = 0;
     while (true) {
-        chThdSleepMilliseconds(10);
+        chThdSleepMilliseconds(1);
         //j = (j+17)%0x10000;
+        /*
         j = (j+1+j/200+j/2000+j/20000);
         if (j >= 0x10000) {
             j = 0;
+            k += 1;
+            if (k >= 9) {
+                k = 0;
+            }
+        }
+        */
+        j ++;
+        if (j >= 0x0800) {
+            j = 0;
+            asm volatile ("nop");
         }
         //j = (j+1)%20;
+        /*
         for (size_t i=0; i<sizeof(cfg->val)/sizeof(cfg->val[0]); i++) {
-            cfg->val[i] = j;
+            if (i<3) {
+                cfg->val[i] = j;
+            } else {
+                cfg->val[i] = 0;
+            }
         }
+        */
+        /*
+        memset(cfg->val, 0, sizeof(cfg->val));
+        cfg->val[3*k+0] = j;
+        cfg->val[3*k+1] = j;
+        cfg->val[3*k+2] = j;
         precalc_modulation(cfg);
+        */
+
+        /*
+        size_t act = cfg->p.writer;
+        memset(cfg->p.data_high[act], 0, sizeof(cfg->p.data_high[act]));
+        memset(cfg->p.data_low[act], 0, sizeof(cfg->p.data_low[act]));
+
+        for (int i=0; i<4; i++) {
+            (j < 0x0400 ? cfg->p.data_high[act][1] : cfg->p.data_low[act][5])[i] = 0xff;
+        }
+        */
+
+        //for (size_t i=0; i<4; i++) {
+        //    cfg->p.data_low[act][7][i] = 127;
+        //}
+        //cfg->p.data_low[act][7][dbg_num/8] |= 1<<(dbg_num%8);
+        //cfg->p.data_low[act][7][0] = d0;
+        //cfg->p.data_low[act][7][1] = d1;
+        //cfg->p.data_low[act][7][2] = d2;
+        //cfg->p.data_low[act][7][3] = d3;
+
+        if (!cfg->p.update) {
+            cfg->p.writer = cfg->p.ready;
+            cfg->p.ready = act;
+            cfg->p.update = true;
+        }
 
         /* FIXME DEBUG CODE */
         /*
@@ -292,7 +344,7 @@ static void tlc5922_load_dot_correction(struct high_current_modulation_cfg *cfg)
     //uint16_t old_ccmr2 = TIM1->CCMR2;
     palSetLine(cfg->tlc_mode_line);
     //TIM1->CCMR2 = (TIM1->CCMR2 & ~STM32_TIM_CCMR2_OC2M_Mask) | STM32_TIM_CCMR2_OC2M(5); /* force high */
-    uint8_t data[(DAZZLE_HCM_MAX_REGISTERS+1)/2*14];
+    uint8_t data[14];
     for (size_t i=0; i<(cfg->channel_count+15)/16; i++) {
         tlc5922_pack_dot_correction(&cfg->dot_correction[i*16], data);
         spiSend(cfg->spid_low, sizeof(data), data);
