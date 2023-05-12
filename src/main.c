@@ -207,15 +207,17 @@ __attribute__((__naked__)) void HardFault_Handler(void) {
 }
 
 int main(void) {
+    RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
+    SYSCFG->CFGR1 |= SYSCFG_CFGR1_SPI2_DMA_RMP | SYSCFG_CFGR1_SPI2_DMA_RMP;
     halInit();
     chSysInit();
-    // FIXME DEBUG i2cStart(pdb_config.fusb.i2cp, &i2c2config);
+    i2cStart(pdb_config.fusb.i2cp, &i2c2config);
     chThdSleepMilliseconds(100);
 
     /* Start the USB Power Delivery threads */
-    // FIXME DEBUG pdb_init(&pdb_config);
+    pdb_init(&pdb_config);
     chThdSleepMilliseconds(100);
-    // FIXME DEBUG chEvtSignal(pdb_config.pe.thread, PDB_EVT_PE_NEW_POWER);
+    chEvtSignal(pdb_config.pe.thread, PDB_EVT_PE_NEW_POWER);
     dazzle_power_governor_run(&dazzle_cfg);
     dazzle_high_current_modulation_run(&dazzle_cfg.hcm);
     /* Wait, letting all the other threads do their work. */
